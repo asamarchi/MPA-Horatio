@@ -47,7 +47,7 @@ Pod::Spec.new do |s|
 
   s.subspec 'CoreLocation' do |loc|
     loc.source_files = 'Horatio/Horatio/Classes/Operations/{Location}*.swift'
-	core.watchos.exclude_files = 'Horatio/Horatio/Classes/Operations/{Location}*.swift'
+	loc.watchos.exclude_files = 'Horatio/Horatio/Classes/Operations/{Location}*.swift'
 	loc.framework = 'CoreLocation'
     loc.dependency 'Horatio/Core'
   end

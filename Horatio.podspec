@@ -3,6 +3,7 @@ Pod::Spec.new do |s|
   s.version = '0.3'
 
   s.ios.deployment_target = '9.0'
+  s.watchos.deployment_target = '2.2'
 
   s.license = 'MIT'
   s.summary = 'Horatio is a library of patterns, protocols, and classes typical for the "skeleton" of a modern app.'  

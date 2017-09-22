@@ -24,7 +24,7 @@ Pod::Spec.new do |s|
   s.subspec 'Core' do |core|
     core.source_files = 'Horatio/Horatio/**/*.{h,swift}'
     core.exclude_files = 'Horatio/Horatio/Classes/Operations/{Calendar,CKContainer,Cloud,Health,Location,Passbook,Photos,Remote,UIUser,User}*.swift'
-	core.watchos.exclude_files = 'Horatio/Horatio/Classes/Operations/ReachabilityCondition.swift'
+	core.watchos.exclude_files = 'Horatio/Horatio/Classes/Operations/{Reachability, Alert}*.swift', 'Horatio/Horatio/Classes/Features/*.swift'
   end
 
   s.subspec 'EventKit' do |event|
@@ -47,6 +47,7 @@ Pod::Spec.new do |s|
 
   s.subspec 'CoreLocation' do |loc|
     loc.source_files = 'Horatio/Horatio/Classes/Operations/{Location}*.swift'
+	core.watchos.exclude_files = 'Horatio/Horatio/Classes/Operations/{Location}*.swift'
 	loc.framework = 'CoreLocation'
     loc.dependency 'Horatio/Core'
   end

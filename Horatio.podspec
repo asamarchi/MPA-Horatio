@@ -21,6 +21,8 @@ Pod::Spec.new do |s|
   
   s.default_subspec = 'Core'
 
+  s.watchos.exclude_files = 'Horatio/Horatio/Classes/Operations/ReachabilityCondition.swift'
+
   s.subspec 'Core' do |core|
     core.source_files = 'Horatio/Horatio/**/*.{h,swift}'
     core.exclude_files = 'Horatio/Horatio/Classes/Operations/{Calendar,CKContainer,Cloud,Health,Location,Passbook,Photos,Remote,UIUser,User}*.swift'

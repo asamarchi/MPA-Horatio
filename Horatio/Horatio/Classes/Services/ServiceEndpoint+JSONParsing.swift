@@ -38,8 +38,11 @@ extension ServiceEndpoint : JSONParsing {
             var components = URLComponents()
             components.scheme = JSONParser.parseString(data[JSONKeys.Scheme])
             components.host = JSONParser.parseString(data[JSONKeys.HostName])
-            components.path = "\(basePath)/\(path)"
+            components.path = "\(String(describing: basePath))/\(String(describing: path))"
 
+            let paths = [basePath, path].flatMap { $0 }
+            components.path = paths.joined(separator: "/")
+            
             self.urlContainer = .components(components)
         }
 

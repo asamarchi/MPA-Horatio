@@ -16,10 +16,10 @@ public struct JSONParsingOptions: OptionSet {
     public static let none = JSONParsingOptions(rawValue: 0)
 
     /// Allow empty values (will be converted to a default value when parsed).
-    static let allowEmpty = JSONParsingOptions(rawValue: 1)
+    public static let allowEmpty = JSONParsingOptions(rawValue: 1)
 
     /// Allow value conversion; for example, if bare literal instead of requested array, convert to an array containing it.
-    static let allowConversion = JSONParsingOptions(rawValue: 2)
+    public static let allowConversion = JSONParsingOptions(rawValue: 2)
 
     public init(rawValue: Int) {
         self.rawValue = rawValue
@@ -65,7 +65,7 @@ open class JSONParser {
 
         if options.contains(.allowConversion) {
             if let numberValue = value as? NSNumber {
-                return Int(numberValue)
+                return Int(truncating: numberValue)
             }
 
             if let stringValue = value as? String {
@@ -87,7 +87,7 @@ open class JSONParser {
 
         if options.contains(.allowConversion) {
             if let numberValue = value as? NSNumber {
-                return Double(numberValue)
+                return Double(truncating: numberValue)
             }
 
             if let stringValue = value as? String {
@@ -109,7 +109,7 @@ open class JSONParser {
 
         if options.contains(.allowConversion) {
             if let numberValue = value as? NSNumber {
-                return Bool(numberValue)
+                return Bool(truncating: numberValue)
             }
 
             if let stringValue = value as? String {

@@ -15,24 +15,7 @@ import Foundation
  about interesting operation state changes
  */
 open class Operation: Foundation.Operation {
-
-    // use the KVO mechanism to indicate that changes to "state" affect other properties as well
-    class func keyPathsForValuesAffectingIsReady() -> Set<NSObject> {
-        return ["state" as NSObject]
-    }
-
-    class func keyPathsForValuesAffectingIsExecuting() -> Set<NSObject> {
-        return ["state" as NSObject]
-    }
     
-    class func keyPathsForValuesAffectingIsFinished() -> Set<NSObject> {
-        return ["state" as NSObject]
-    }
-
-    class func keyPathsForValuesAffectingIsCancelled() -> Set<NSObject> {
-        return ["state" as NSObject]
-    }
-
     // MARK: State Management
     
     fileprivate enum State: Int, Comparable {
@@ -62,6 +45,19 @@ open class Operation: Foundation.Operation {
         
         /// The `Operation` has finished executing.
         case finished
+        
+        func keyPathForKeyValueObserving() -> String? {
+            switch self {
+            case .ready:
+                return "isReady"
+                
+            case .finished:
+                return "isFinished"
+                
+            default:
+                return nil
+            }
+        }
         
         func canTransitionToState(_ target: State) -> Bool {
             switch (self, target) {
@@ -94,12 +90,12 @@ open class Operation: Foundation.Operation {
     func willEnqueue() {
         state = .pending
     }
-
+    
     /// Private storage for the `state` property that will be KVO observed.
     fileprivate var _state = State.initialized
     
     /// A lock to guard reads and writes to the `_state` property
-    fileprivate let stateLock = NSLock()
+    fileprivate let stateLock = NSRecursiveLock()
     
     fileprivate var state: State {
         get {
@@ -107,79 +103,87 @@ open class Operation: Foundation.Operation {
                 _state
             }
         }
-
+        
         set(newState) {
-            /*
-             It's important to note that the KVO notifications are NOT called from inside
-             the lock. If they were, the app would deadlock, because in the middle of
-             calling the `didChangeValueForKey()` method, the observers try to access
-             properties like "isReady" or "isFinished". Since those methods also
-             acquire the lock, then we'd be stuck waiting on our own lock. It's the
-             classic definition of deadlock.
-             */
-            willChangeValue(forKey: "state")
-            
-            stateLock.withCriticalScope { Void -> Void in
-                guard _state != .finished else {
-                    return
+            stateLock.withCriticalScope { () -> Void in
+                willChangeValue(forKey: "state")
+                
+                let newStateKeyPath = newState.keyPathForKeyValueObserving()
+                
+                if let path = newStateKeyPath {
+                    willChangeValue(forKey: path)
                 }
                 
                 assert(_state.canTransitionToState(newState), "Performing invalid state transition.")
-                _state = newState
+                
+                if _state != .finished {
+                    _state = newState
+                }
+                
+                if let path = newStateKeyPath {
+                    didChangeValue(forKey: path)
+                }
+                
+                didChangeValue(forKey: "state")
             }
-
-            didChangeValue(forKey: "state")
         }
     }
-
+    
     // Here is where we extend our definition of "readiness".
     override open var isReady: Bool {
-        switch state {
-            
-        case .initialized:
-            // If the operation has been cancelled, "isReady" should return true
-            return isCancelled
-            
-        case .pending:
-            // If the operation has been cancelled, "isReady" should return true
-            guard !isCancelled else {
-                return true
+        var result = false
+        
+        stateLock.withCriticalScope { () -> Void in
+            switch state {
+                
+            case .initialized:
+                // If the operation has been cancelled, "isReady" should return true
+                result = isCancelled
+                
+            case .pending:
+                // If the operation has been cancelled, "isReady" should return true
+                guard !isCancelled else {
+                    result = true
+                    return
+                }
+                
+                // If super isReady, conditions can be evaluated
+                if super.isReady {
+                    evaluateConditions()
+                }
+                
+                // Until conditions have been evaluated, "isReady" returns false
+                result = false
+                
+            case .ready:
+                result = super.isReady || isCancelled
+                
+            default:
+                result = false
             }
-            
-            // If super isReady, conditions can be evaluated
-            if super.isReady {
-                evaluateConditions()
-            }
-            
-            // Until conditions have been evaluated, "isReady" returns false
-            return false
-            
-        case .ready:
-            return super.isReady || isCancelled
-            
-        default:
-            return false
         }
+        
+        return result
     }
     
     var userInitiated: Bool {
         get {
             return qualityOfService == .userInitiated
         }
-
+        
         set {
             assert(state < .executing, "Cannot modify userInitiated after execution has begun.")
-
+            
             qualityOfService = newValue ? .userInitiated : .default
         }
     }
-
+    
     fileprivate(set) open var failed = false
-
+    
     override open var isExecuting: Bool {
         return state == .executing
     }
-
+    
     override open var isFinished: Bool {
         return state == .finished
     }
@@ -188,48 +192,48 @@ open class Operation: Foundation.Operation {
         assert(state == .pending && !isCancelled, "evaluateConditions() was called out-of-order")
         
         state = .evaluatingConditions
-
+        
         OperationConditionEvaluator.evaluate(conditions, operation: self) { failures in
             self._internalErrors.append(contentsOf: failures)
             self.state = .ready
         }
     }
-
+    
     // MARK: Observers and Conditions
-
+    
     fileprivate(set) var conditions = [OperationCondition]()
     
-    func addCondition(_ condition: OperationCondition) {
+    public func addCondition(_ condition: OperationCondition) {
         assert(state < .evaluatingConditions, "Cannot modify conditions after execution has begun.")
-
+        
         conditions.append(condition)
     }
-
+    
     fileprivate(set) var observers = [OperationObserver]()
     
-    func addObserver(_ observer: OperationObserver) {
+    public func addObserver(_ observer: OperationObserver) {
         assert(state <= .executing, "Cannot modify observers after execution has begun.")
-
+        
         observers.append(observer)
     }
-
+    
     override open func addDependency(_ operation: Foundation.Operation) {
         assert(state < .executing, "Dependencies cannot be modified after execution has begun.")
         
         super.addDependency(operation)
     }
-
+    
     // MARK: Execution and Cancellation
-
+    
     /*
-        I think this is where the main problem is.
-        Under certain conditions start will be called, but main will not
-        causing the state to be .ready - but it's not executing - the queue never restarts it
-    */
+     I think this is where the main problem is.
+     Under certain conditions start will be called, but main will not
+     causing the state to be .ready - but it's not executing - the queue never restarts it
+     */
     override final public func start() {
         // NSOperation.start() contains important logic that shouldn't be bypassed.
         super.start()
-
+        
         if name == nil {
             self.name = NSStringFromClass(type(of: self))
         }
@@ -238,7 +242,7 @@ open class Operation: Foundation.Operation {
         if let name = self.name {
             NSLog("\(name) started")
         }
-
+        
         // If the operation has been cancelled, we still need to enter the "Finished" state.
         if isCancelled {
             finish()
@@ -261,7 +265,7 @@ open class Operation: Foundation.Operation {
             finish()
         }
     }
-
+    
     /**
      `execute()` is the entry point of execution for all `Operation` subclasses.
      If you subclass `Operation` and wish to customize its execution, you would
@@ -272,27 +276,27 @@ open class Operation: Foundation.Operation {
      finished its execution, and that operations dependent on yours can re-evaluate
      their readiness state.
      */
-    func execute() {
+    open func execute() {
         print("\(type(of: self)) must override `execute()`.")
-
+        
         finish()
     }
-
+    
     fileprivate var _internalErrors = [Error]()
-    func cancelWithError(_ error: Error? = nil) {
+    public final func cancelWithError(_ error: Error? = nil) {
         if let error = error {
             _internalErrors.append(error)
         }
         
         cancel()
     }
-
-    final func produceOperation(_ operation: Foundation.Operation) {
+    
+    public final func produceOperation(_ operation: Foundation.Operation) {
         for observer in observers {
             observer.operation(self, didProduceOperation: operation)
         }
     }
-
+    
     // MARK: Finishing
     
     /**
@@ -303,7 +307,7 @@ open class Operation: Foundation.Operation {
      for how an error from an `NSURLSession` is passed along via the
      `finishWithError()` method.
      */
-    final func finishWithError(_ error: Error?) {
+    public final func finishWithError(_ error: Error?) {
         if let error = error {
             finish([error])
         }
@@ -317,7 +321,7 @@ open class Operation: Foundation.Operation {
      operation has finished.
      */
     fileprivate var hasFinishedAlready = false
-    final func finish(_ errors: [Error] = []) {
+    public final func finish(_ errors: [Error] = []) {
         if !hasFinishedAlready {
             hasFinishedAlready = true
             state = .finishing
@@ -349,15 +353,15 @@ open class Operation: Foundation.Operation {
      this method to potentially inform the user about an error when trying to
      bring up the Core Data stack.
      */
-    func finished(_ errors: [NSError]) {
+    open func finished(_ errors: [NSError]) {
         // No op.
-
+        
         // TODO: Remove this spammy log
         if let name = self.name {
             NSLog("\(name) finished")
         }
-}
-
+    }
+    
     override final public func waitUntilFinished() {
         /*
          Waiting on operations is almost NEVER the right thing to do. It is

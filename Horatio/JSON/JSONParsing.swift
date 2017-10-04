@@ -13,7 +13,7 @@ public struct JSONParsingOptions: OptionSet {
     public let rawValue: Int
 
     /// No options set.
-    static let none = JSONParsingOptions(rawValue: 0)
+    public static let none = JSONParsingOptions(rawValue: 0)
 
     /// Allow empty values (will be converted to a default value when parsed).
     static let allowEmpty = JSONParsingOptions(rawValue: 1)
@@ -234,10 +234,10 @@ extension String {
                 let entityLength = (beacon == "\\u") ? 4 : 2
                 let entity = self[position ..< self.characters.index(position, offsetBy: entityLength)]
 
-                if let decodedEntity = decodeEntity(entity) {
+                if let decodedEntity = decodeEntity(String(entity)) {
                     result.append(decodedEntity)
                 } else {
-                    result.append(entity)
+                    result.append(String(entity))
                 }
             }
         }

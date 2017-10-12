@@ -60,6 +60,11 @@ open class FetchServiceResponseOperation: GroupOperation {
         guard let url = request.url else { return UUID().uuidString }
 
         let lastComponent = url.lastPathComponent
+        
+        if lastComponent == "/" {
+            return String(url.hashValue)
+        }
+        
         return lastComponent
     }
 }
